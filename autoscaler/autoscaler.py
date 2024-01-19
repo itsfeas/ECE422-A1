@@ -1,4 +1,5 @@
 import docker
+import redis
 
 def get_replicas(api_client: docker.APIClient):
     conf_dic = api_client.inspect_service("simpleweb")
@@ -22,8 +23,10 @@ def scale_down(api_client: docker.APIClient):
     n_replicas = get_replicas(api_client)
     model.scale(replicas=n_replicas-1)
 
-def monitor():
-    pass
+def get_response_times():
+    l = red.llen("client:times")
+    lst = [int(t) for t in red.lpop("client:times", l)]
+    return sum(lst)/len(lst)
 
 def init_service(client: docker.DockerClient):
     model = client.services.create(
@@ -51,6 +54,8 @@ if __name__ == "__main__":
     api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
     api_client.remove_service("simpleweb")
 
+    red = redis.Redis(host='localhost', port=6379)
+    
     model = init_service(client)
     scale_up(api_client, model)
     scale_down(api_client, model)
