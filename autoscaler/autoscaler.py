@@ -1,3 +1,4 @@
+import time
 import docker
 import redis
 
@@ -54,8 +55,13 @@ if __name__ == "__main__":
     api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
     api_client.remove_service("simpleweb")
 
-    red = redis.Redis(host='localhost', port=6379)
-    
     model = init_service(client)
-    scale_up(api_client, model)
-    scale_down(api_client, model)
+    red = redis.Redis(host='localhost', port=6379)
+
+    while True:
+        time.sleep(20)
+        ave = get_response_times()
+        if ave>20:
+            scale_up(api_client, model)
+        elif ave<5:
+            scale_down(api_client, model)
