@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
         i = 0
         t = 0
-        while threads!=max_users:
+        while i<=max_users:
             threads[i].start()
             i += 1
             threads.append(MyThread("User", i))
@@ -75,7 +75,7 @@ if __name__ == "__main__":
             plt.scatter(t, y)
             plt.pause(0.05)
             t += 1
-        while threads!=0:
+        while i!=0:
             threads[i].join()
             threads.pop()
 
