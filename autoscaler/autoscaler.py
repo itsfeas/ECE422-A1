@@ -20,16 +20,18 @@ class RedisClient:
 
 
 class AutoScaler:
+    disabled = None
     client = None
     api_client = None
     model = None
     limit = None
     red = None
-    def __init__(self, limit=50):
+    def __init__(self, limit=50, disabled=False):
         self.client = docker.DockerClient(base_url='unix://var/run/docker.sock')
         self.api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
         self.red = RedisClient()
         self.limit = limit
+        self.disabled = disabled
         self.connect()
         self.model.scale(replicas=0)
 
@@ -71,10 +73,11 @@ class AutoScaler:
             ratio = (hits*2/replicas) if replicas != 0 else 1
 
             print("hits: ", hits, "ratio: ", ratio, "replicas: ", replicas)
-            if replicas==0 or (ratio>5 and replicas<self.limit):
-                self.scale_up(ratio)
-            elif ratio<2 and replicas>1:
-                self.scale_down()
+            if not self.disabled:
+                if replicas==0 or (ratio>5 and replicas<self.limit):
+                    self.scale_up(ratio)
+                elif ratio<2 and replicas>1:
+                    self.scale_down()
             
             logger.add_scalar("replicas", replicas, counter)
             logger.add_scalar("requests/s", hits/10, counter)
@@ -87,5 +90,6 @@ if __name__ == "__main__":
     shutil.rmtree("runs/")
     red = redis.Redis(host='localhost', port=6379)
     scaler = AutoScaler()
+    # scaler = AutoScaler(disabled=True)
     scaler.monitor(interval)
 
