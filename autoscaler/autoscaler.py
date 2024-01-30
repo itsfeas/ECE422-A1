@@ -45,7 +45,7 @@ class AutoScaler:
     
     def scale_up(self, ratio):
         n_replicas = self.get_replicas()
-        self.model.scale(replicas=int(n_replicas+1+min(10, (ratio-5))))
+        self.model.scale(replicas=int(n_replicas+1+(ratio-5)))
 
     def scale_down(self):
         n_replicas = self.get_replicas()
@@ -64,6 +64,7 @@ class AutoScaler:
     def monitor(self, interval):
         logger = SummaryWriter()
         counter = 0
+        self.red.reset_hits()
         while True:
             # update model of service
             self.connect()
