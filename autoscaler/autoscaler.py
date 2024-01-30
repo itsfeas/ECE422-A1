@@ -1,6 +1,8 @@
 import time
 import docker
 import redis
+import shutil
+from torch.utils.tensorboard import SummaryWriter
 
 SERVICE_NAME = "simpleweb_web"
 
@@ -28,6 +30,8 @@ class AutoScaler:
         self.api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
         self.red = RedisClient()
         self.limit = limit
+        self.connect()
+        self.model.scale(replicas=0)
 
     def get_replicas(self):
         conf_dic = self.api_client.inspect_service(SERVICE_NAME)
@@ -39,7 +43,7 @@ class AutoScaler:
     
     def scale_up(self, ratio):
         n_replicas = self.get_replicas()
-        self.model.scale(replicas=n_replicas+1+(ratio-5))
+        self.model.scale(replicas=int(n_replicas+1+min(10, (ratio-5))))
 
     def scale_down(self):
         n_replicas = self.get_replicas()
@@ -56,6 +60,8 @@ class AutoScaler:
         return int(hits)
     
     def monitor(self, interval):
+        logger = SummaryWriter()
+        counter = 0
         while True:
             # update model of service
             self.connect()
@@ -69,11 +75,16 @@ class AutoScaler:
                 self.scale_up(ratio)
             elif ratio<2 and replicas>1:
                 self.scale_down()
+            
+            logger.add_scalar("replicas", replicas, counter)
+            logger.add_scalar("requests/s", hits/10, counter)
+            counter += 1 
             time.sleep(interval)
 
 
 if __name__ == "__main__":
     interval = 10
+    shutil.rmtree("runs/")
     red = redis.Redis(host='localhost', port=6379)
     scaler = AutoScaler()
     scaler.monitor(interval)
