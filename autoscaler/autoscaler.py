@@ -1,87 +1,96 @@
-"""
-HTTP client simulator. It simulate a number of concurrent users and calculate the response time for each request.
-"""
-
-import requests
 import time
-import threading
+import docker
+import redis
+import shutil
 from torch.utils.tensorboard import SummaryWriter
-import sys
 
-req_time = []
-mut = threading.Lock()
+SERVICE_NAME = "simpleweb_web"
 
-if len(sys.argv) < 4:
-    print('To few arguments; you need to specify 3 arguments.')
-    print('Default values will be used for server_ip, no of users and think time.\n')
-    swarm_master_ip = '10.2.9.108'  # ip address of the Swarm master node
-    no_users = 1  # number of concurrent users sending request to the server
-    think_time = 1  # the user think time (seconds) in between consequent requests
-else:
-    print('Default values have be overwritten.')
-    swarm_master_ip = sys.argv[1]
-    no_users = int(sys.argv[2])
-    think_time = float(sys.argv[3])
+class RedisClient:
+    red = None
+    def __init__(self, host='localhost', port=6379):
+        self.red = redis.Redis(host=host, port=port)
+    
+    def get_hits(self):
+        i = self.red.get("hits")
+        return i if i else 0
+    
+    def reset_hits(self):
+        self.red.set("hits", 0)
 
 
-class MyThread(threading.Thread):
-    def __init__(self, name, counter):
-        threading.Thread.__init__(self)
-        self.threadID = counter
-        self.name = name
-        self.counter = counter
+class AutoScaler:
+    disabled = None
+    client = None
+    api_client = None
+    model = None
+    limit = None
+    red = None
+    def __init__(self, limit=50, disabled=False):
+        self.client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+        self.api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
+        self.red = RedisClient()
+        self.limit = limit
+        self.disabled = disabled
+        self.connect()
+        self.model.scale(replicas=1)
 
-    def run(self):
-        print("Starting " + self.name + str(self.counter))
-        workload(self.name + str(self.counter))
+    def get_replicas(self):
+        conf_dic = self.api_client.inspect_service(SERVICE_NAME)
+        try:
+            n_replicas = conf_dic["Spec"]["Mode"]["Replicated"]["Replicas"]
+        except:
+            print("SERVICE NOT CONFIGURED PROPERLY!!!!")
+        return n_replicas
+    
+    def scale_up(self, ratio):
+        n_replicas = self.get_replicas()
+        self.model.scale(replicas=int(n_replicas+1+(ratio-5)))
 
+    def scale_down(self):
+        n_replicas = self.get_replicas()
+        self.model.scale(replicas=n_replicas-1)
+    
+    def connect(self):
+        services = self.client.services.list(filters = { "name": SERVICE_NAME })
+        m = services[0]
+        self.model = self.client.services.get(m.id)
+    
+    def get_hits(self):
+        hits = self.red.get_hits()
+        self.red.reset_hits()
+        return int(hits)
+    
+    def monitor(self, interval):
+        logger = SummaryWriter()
+        counter = 0
+        self.red.reset_hits()
+        while True:
+            # update model of service
+            self.connect()
 
-def workload(user):
-    while True:
-        t0 = time.time()
-        requests.get('http://' + swarm_master_ip + ':8000/')
-        t1 = time.time()
-        mut.acquire()
-        req_time.append(t1 - t0) # append resp time to list
-        mut.release()
-        time.sleep(think_time)
-        print("Response Time for " + user + " = " + str(t1 - t0))
+            hits = self.get_hits()
+            replicas = self.get_replicas()
+            ratio = (hits*2/replicas) if replicas != 0 else 1
 
-class VisualizerThread(threading.Thread):
-    def __init__(self, logger):
-        threading.Thread.__init__(self)
-        self.logger = logger
-
-    def run(self):
-        print("Starting Visualizer")
-        visualizer_workload(logger)
-
-
-def visualizer_workload(logger):
-    counter = 0
-    req_time_local = None
-    while True:
-        mut.acquire()
-        req_time_local = req_time.copy()
-        mut.release()
-        ave_req_time = (sum(req_time_local)/len(req_time_local)) if req_time_local else 0
-        print("Average Request Time: ", ave_req_time)
-        logger.add_scalar("average request time", ave_req_time, counter)
-        logger.flush()
-        counter += 1
-        time.sleep(20)
+            print("hits: ", hits, "ratio: ", ratio, "replicas: ", replicas)
+            if not self.disabled:
+                if replicas==0 or (ratio>5 and replicas<self.limit):
+                    self.scale_up(ratio)
+                elif ratio<2 and replicas>1:
+                    self.scale_down()
+            
+            logger.add_scalar("replicas", replicas, counter)
+            logger.add_scalar("requests/s", hits/10, counter)
+            counter += 1 
+            time.sleep(interval)
 
 
 if __name__ == "__main__":
-    threads = []
-    logger = SummaryWriter()
-    for i in range(no_users):
-        threads.append(MyThread("User", i))
-    threads.append(VisualizerThread(logger))
-    
-    for i in range(no_users+1):
-        threads[i].start()
-
-    for i in range(no_users+1):
-        threads[i].join()
-    
+    interval = 10
+    if os.path.exists("runs/"):
+        shutil.rmtree("runs/")
+    red = redis.Redis(host='localhost', port=6379)
+    scaler = AutoScaler()
+    # scaler = AutoScaler(disabled=True)
+    scaler.monitor(interval)

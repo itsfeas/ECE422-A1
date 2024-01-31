@@ -47,25 +47,41 @@ def workload(user):
         time.sleep(think_time)
         print("Response Time for " + user + " = " + str(t1 - t0))
 
+class VisualizerThread(threading.Thread):
+    def __init__(self, logger):
+        threading.Thread.__init__(self)
+        self.logger = logger
 
-if __name__ == "__main__":
-    threads = []
-    logger = SummaryWriter()
-    for i in range(no_users):
-        threads.append(MyThread("User", i))
+    def run(self):
+        print("Starting Visualizer")
+        visualizer_workload(logger)
 
-    for i in range(no_users):
-        threads[i].start()
 
-    for i in range(no_users):
-        threads[i].join()
-    
+def visualizer_workload(logger):
     counter = 0
     req_time_local = None
     while True:
         mut.acquire()
         req_time_local = req_time.copy()
         mut.release()
-        logger.add_scalar("average request time", sum(req_time_local)/len(req_time_local), counter)
+        ave_req_time = (sum(req_time_local)/len(req_time_local)) if req_time_local else 0
+        print("Average Request Time: ", ave_req_time)
+        logger.add_scalar("average request time", ave_req_time, counter)
+        logger.flush()
         counter += 1
         time.sleep(20)
+
+
+if __name__ == "__main__":
+    threads = []
+    logger = SummaryWriter()
+    for i in range(no_users):
+        threads.append(MyThread("User", i))
+    threads.append(VisualizerThread(logger))
+    
+    for i in range(no_users+1):
+        threads[i].start()
+
+    for i in range(no_users+1):
+        threads[i].join()
+    
