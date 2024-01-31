@@ -33,7 +33,7 @@ class AutoScaler:
         self.limit = limit
         self.disabled = disabled
         self.connect()
-        self.model.scale(replicas=0)
+        self.model.scale(replicas=1)
 
     def get_replicas(self):
         conf_dic = self.api_client.inspect_service(SERVICE_NAME)
@@ -88,7 +88,8 @@ class AutoScaler:
 
 if __name__ == "__main__":
     interval = 10
-    shutil.rmtree("runs/")
+    if os.path.exists("runs/"):
+        shutil.rmtree("runs/")
     red = redis.Redis(host='localhost', port=6379)
     scaler = AutoScaler()
     # scaler = AutoScaler(disabled=True)
