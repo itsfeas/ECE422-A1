@@ -51,7 +51,7 @@ class AutoScaler:
     def scale_down(self, ratio):
         n_replicas = self.get_replicas()
         ratio = max(0.6, ratio)
-        self.model.scale(replicas=max(int(n_replicas-1-(3/ratio)), 1))
+        self.model.scale(replicas=max(int(n_replicas-(3/ratio)), 1))
     
     def connect(self):
         services = self.client.services.list(filters = { "name": SERVICE_NAME })
