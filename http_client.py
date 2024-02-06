@@ -7,6 +7,8 @@ import time
 import threading
 from torch.utils.tensorboard import SummaryWriter
 import sys
+import shutil
+import os
 
 global req_time
 req_time = []
@@ -86,9 +88,12 @@ class VisualizerThread(threading.Thread):
 
 if __name__ == "__main__":
     threads = []
+    if os.path.exists("runs/"):
+        shutil.rmtree("runs/")
+
     logger = SummaryWriter()
     logger.add_scalar("average request time", 0, 0)
-    if len(sys.argv) < 4:
+    if len(sys.argv) <= 4:
         for i in range(no_users):
             threads.append(MyThread("User", i))
         threads.append(VisualizerThread(logger))
