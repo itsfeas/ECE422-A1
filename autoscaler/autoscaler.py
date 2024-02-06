@@ -1,4 +1,5 @@
 import time
+import os
 import docker
 import redis
 import shutil
@@ -47,9 +48,10 @@ class AutoScaler:
         n_replicas = self.get_replicas()
         self.model.scale(replicas=int(n_replicas+1+(ratio-5)))
 
-    def scale_down(self):
+    def scale_down(self, ratio):
         n_replicas = self.get_replicas()
-        self.model.scale(replicas=n_replicas-1)
+        ratio = max(0.6, ratio)
+        self.model.scale(replicas=max(int(n_replicas-1-(3/ratio)), 1))
     
     def connect(self):
         services = self.client.services.list(filters = { "name": SERVICE_NAME })
@@ -77,8 +79,8 @@ class AutoScaler:
             if not self.disabled:
                 if replicas==0 or (ratio>5 and replicas<self.limit):
                     self.scale_up(ratio)
-                elif ratio<2 and replicas>1:
-                    self.scale_down()
+                elif ratio<=3 and replicas>1:
+                    self.scale_down(ratio)
             
             logger.add_scalar("replicas", replicas, counter)
             logger.add_scalar("requests/s", hits/10, counter)
@@ -94,3 +96,4 @@ if __name__ == "__main__":
     scaler = AutoScaler()
     # scaler = AutoScaler(disabled=True)
     scaler.monitor(interval)
+
